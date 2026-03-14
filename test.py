@@ -114,6 +114,12 @@ def create_maintenance_order(record, severity_percent, verbose=False):
         "issue": "Overheating detected",
         "temperature": record.get('temperature'),
         "load_percent": record.get('load_percent'),
+        "pressure": record.get('pressure'),
+        "flow_rate": record.get('flow_rate'),
+        "vibration": record.get('vibration'),
+        "rpm": record.get('rpm'),
+        "operational_hours": record.get('operational_hours'),
+        "maintenance_flag": record.get('maintenance_flag'),
         "severity_percent": severity_percent,
         "severity_label": label,
         "action": action
@@ -350,7 +356,12 @@ def print_report(work_orders, severity_label, building_name=None):
     # Convert to plain dict for downstream functions
     work_order = top_row.to_dict()
 
-    print("Selected pump report:")
+    # Print only the requested variables for the selected pump before the report
+    print("\nPump variables and values:")
+    for key in ['pump_id', 'timestamp', 'temperature', 'pressure', 'flow_rate', 'load_percent']:
+        print(f"- {key}: {work_order.get(key)}")
+
+    print("\nSelected pump report:")
     if building_name:
         print(f"Building: {building_name}")
     print(f"Pump ID: {work_order.get('pump_id')}")
