@@ -31,6 +31,7 @@ def load_dataset(filepath="Large_Industrial_Pump_Maintenance_Dataset.csv", nrows
         'Temperature': 'temperature',
         'Pressure': 'pressure',
         'Flow_Rate': 'flow_rate',
+        'Load_Percent': 'load_percent',
         'Vibration': 'vibration',
         'RPM': 'rpm',
         'Operational_Hours': 'operational_hours',
@@ -53,6 +54,11 @@ def ai_assess_severity(record):
     pressure = float(record.get('pressure', 0))
     vibration = float(record.get('vibration', 0)) if 'vibration' in record else 0
     flow = float(record.get('flow_rate', 0))
+    # Load percent: higher load can increase risk. Expect 0..100
+    try:
+        load_percent = float(record.get('load_percent', 0))
+    except Exception:
+        load_percent = 0.0
 
     # Normalize each metric to 0..1 where 1 is highest risk.
     # Temperature: <=90 -> 0, 90-130 -> linear 0..1, >130 -> 1
@@ -73,10 +79,19 @@ def ai_assess_severity(record):
     # Flow: low flow is risky. Map flow 0..20 -> 1..0 (inverse)
     f_score = 1.0 - min(max(flow / 20.0, 0.0), 1.0)
 
+    # Include load_percent as an additional factor (0..1). Adjusted weights
     # Weights chosen to make 'Moderate' around ~50% typically
-    w_temp, w_pressure, w_vib, w_flow = 0.45, 0.25, 0.15, 0.15
+    w_temp, w_pressure, w_vib, w_flow, w_load = 0.40, 0.23, 0.14, 0.13, 0.10
 
-    risk_frac = (t_score * w_temp) + (p_score * w_pressure) + (v_score * w_vib) + (f_score * w_flow)
+    l_score = min(max(load_percent / 100.0, 0.0), 1.0)
+
+    risk_frac = (
+        (t_score * w_temp)
+        + (p_score * w_pressure)
+        + (v_score * w_vib)
+        + (f_score * w_flow)
+        + (l_score * w_load)
+    )
     risk_percent = round(risk_frac * 100, 1)
     return risk_percent
 
@@ -98,6 +113,7 @@ def create_maintenance_order(record, severity_percent, verbose=False):
         "timestamp": record.get('timestamp'),
         "issue": "Overheating detected",
         "temperature": record.get('temperature'),
+        "load_percent": record.get('load_percent'),
         "severity_percent": severity_percent,
         "severity_label": label,
         "action": action
@@ -107,8 +123,19 @@ def create_maintenance_order(record, severity_percent, verbose=False):
 # --- Explain Step ---
 def explain_action(work_order, verbose=False):
     # Backward-compatible local explanation; may be overridden by OpenAI when available
+    # Format temperature and load gracefully
+    try:
+        temp_str = f"{float(work_order.get('temperature')):.2f} C"
+    except Exception:
+        temp_str = str(work_order.get('temperature'))
+    try:
+        load_val = work_order.get('load_percent')
+        load_str = f"{float(load_val):.1f}%"
+    except Exception:
+        load_str = str(work_order.get('load_percent'))
+
     explanation = (
-        f"Pump {work_order['pump_id']} reported a temperature of {work_order['temperature']:.2f} C.\n"
+        f"Pump {work_order['pump_id']} reported a temperature of {temp_str} and load of {load_str}.\n"
         f"Severity assessed as: {work_order['severity_label']} ({work_order['severity_percent']}%).\n"
         f"Recommended action: {work_order['action']}."
     )
@@ -132,13 +159,19 @@ def _local_detailed_explanation(work_order, building_name=None):
     """
     bname = building_name or 'Unknown'
     temp = work_order.get('temperature')
+    load = work_order.get('load_percent')
     risk = work_order.get('severity_percent')
     label = work_order.get('severity_label')
     action = work_order.get('action')
 
+    try:
+        load_str = f"{float(load):.1f}%"
+    except Exception:
+        load_str = str(load)
+
     exec_summary = (
         f"Executive summary:\nPump {work_order.get('pump_id')} in {bname} is reporting a temperature of "
-        f"{temp:.2f} C with an assessed risk of {risk}% ({label}). The immediate recommendation is: {action}.\n\n"
+        f"{temp:.2f} C and load of {load_str} with an assessed risk of {risk}% ({label}). The immediate recommendation is: {action}.\n\n"
     )
 
     temp_analysis = (
@@ -326,6 +359,13 @@ def print_report(work_orders, severity_label, building_name=None):
         print(f"Temperature: {work_order.get('temperature'):.2f} C")
     except Exception:
         print(f"Temperature: {work_order.get('temperature')}")
+    # Print load percent if available
+    try:
+        lp = work_order.get('load_percent')
+        print(f"Load: {float(lp):.1f}%")
+    except Exception:
+        if work_order.get('load_percent') is not None:
+            print(f"Load: {work_order.get('load_percent')}")
     print(f"Risk: {work_order.get('severity_percent')}% ({work_order.get('severity_label')})")
     print(f"Recommended action: {work_order.get('action')}")
 
