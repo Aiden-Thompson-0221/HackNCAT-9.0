@@ -1,0 +1,9 @@
+.env
+# Byte-compiled / cache
+__pycache__/
+
+# Virtual environment
+.venv/
+
+# Dataset files
+*.csv
